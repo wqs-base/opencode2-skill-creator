@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -23,15 +22,15 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Install npm with trusted publishing support
+      - name: Install latest npm
         run: npm install -g npm@latest
 
-      - name: Verify npm trusted publishing support
+      - name: Verify npm CLI version
         run: |
           set -euo pipefail
           NPM_VERSION=$(npm --version)
           echo "npm ${NPM_VERSION}"
-          node -e 'const parts = process.argv[1].split("."); if (parts.length !== 3 || parts.some((part) => !/^\d+$/.test(part))) { throw new Error("npm is too old for trusted publishing; need npm >= 11.5.1") } const version = parts.map((part) => Number.parseInt(part, 10)); if (version[0] < 11 || (version[0] === 11 && (version[1] < 5 || (version[1] === 5 && version[2] < 1)))) { throw new Error("npm is too old for trusted publishing; need npm >= 11.5.1") }' "$NPM_VERSION"
+          node -e 'const parts = process.argv[1].split("."); if (parts.length !== 3 || parts.some((part) => !/^\d+$/.test(part))) { throw new Error("npm is too old; need npm >= 11.5.1") } const version = parts.map((part) => Number.parseInt(part, 10)); if (version[0] < 11 || (version[0] === 11 && (version[1] < 5 || (version[1] === 5 && version[2] < 1)))) { throw new Error("npm is too old; need npm >= 11.5.1") }' "$NPM_VERSION"
 
       - uses: oven-sh/setup-bun@v2
 
@@ -92,11 +91,13 @@ jobs:
           fi
 
       - name: Publish to npm
-        # npm trusted publishing is bound to this repository/workflow on npmjs.com.
-        # Keep the guard explicit so forks and non-main refs cannot publish.
+        # Authenticates with the NPM_TOKEN repository secret. Keep the guard
+        # explicit so forks and non-main refs cannot publish.
         if: steps.npm.outputs.exists != 'true' && github.repository == 'wqs-base/opencode2-skill-creator' && github.ref == 'refs/heads/main'
-        run: npm publish --access public --provenance
+        run: npm publish --access public
         working-directory: plugin
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Check GitHub release
         id: release
