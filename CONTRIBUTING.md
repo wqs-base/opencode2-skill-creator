@@ -1,4 +1,4 @@
-# Contributing to opencode-skill-creator
+# Contributing to opencode2-skill-creator
 
 Thanks for your interest in contributing! This project is based on [Anthropic's skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator) and adapted for the OpenCode ecosystem.
 
@@ -13,7 +13,7 @@ Thanks for your interest in contributing! This project is based on [Anthropic's 
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/opencode-skill-creator.git`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/opencode2-skill-creator.git`
 3. Install dependencies: `cd plugin && bun install`
 4. Create a branch: `git checkout -b my-contribution`
 
@@ -21,8 +21,8 @@ Thanks for your interest in contributing! This project is based on [Anthropic's 
 
 The project has two components:
 
-- **Skill** (`opencode-skill-creator/`): Markdown instructions (SKILL.md + agents + templates). Edit these directly.
-- **Plugin** (`plugin/`): TypeScript module. Uses Bun as the runtime.
+- **Skill** (`opencode2-skill-creator/`): Markdown instructions (SKILL.md + agents + templates). Edit these directly.
+- **Plugin** (`plugin/`): TypeScript module targeting the OpenCode 2 plugin API (`@opencode/plugin`). Uses Bun for building and for the TypeScript test suite.
 
 To test the plugin locally:
 

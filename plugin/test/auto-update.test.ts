@@ -18,12 +18,12 @@ async function withHome(fn: (home: string) => Promise<void>) {
   const previousHome = process.env.HOME
   const previousXdgCacheHome = process.env.XDG_CACHE_HOME
   const previousXdgConfigHome = process.env.XDG_CONFIG_HOME
-  const previousDisable = process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE
+  const previousDisable = process.env.OPENCODE2_SKILL_CREATOR_AUTO_UPDATE
 
   process.env.HOME = home
   process.env.XDG_CACHE_HOME = join(home, ".cache")
   process.env.XDG_CONFIG_HOME = join(home, ".config")
-  delete process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE
+  delete process.env.OPENCODE2_SKILL_CREATOR_AUTO_UPDATE
 
   try {
     await fn(home)
@@ -33,8 +33,8 @@ async function withHome(fn: (home: string) => Promise<void>) {
     else process.env.XDG_CACHE_HOME = previousXdgCacheHome
     if (previousXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME
     else process.env.XDG_CONFIG_HOME = previousXdgConfigHome
-    if (previousDisable === undefined) delete process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE
-    else process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE = previousDisable
+    if (previousDisable === undefined) delete process.env.OPENCODE2_SKILL_CREATOR_AUTO_UPDATE
+    else process.env.OPENCODE2_SKILL_CREATOR_AUTO_UPDATE = previousDisable
     await rm(home, { recursive: true, force: true })
   }
 }
@@ -45,7 +45,7 @@ async function writeCachedPackage(version: string) {
   writeFileSync(
     join(paths.cachedPackageDir, "package.json"),
     JSON.stringify({
-      name: "opencode-skill-creator",
+      name: "opencode2-skill-creator",
       version,
     }),
   )
@@ -128,7 +128,7 @@ test("path containment check rejects Windows absolute paths outside the cache ro
   expect(
     isInsidePath(
       "C:\\Users\\me\\cache",
-      "C:\\Users\\me\\cache\\node_modules\\opencode-skill-creator",
+      "C:\\Users\\me\\cache\\node_modules\\opencode2-skill-creator",
       win32,
     ),
   ).toBe(true)
@@ -173,7 +173,7 @@ test("auto update does not clear cache when npm latest is not newer", async () =
 
 test("auto update is disabled by env var", async () => {
   await withHome(async () => {
-    process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE = "0"
+    process.env.OPENCODE2_SKILL_CREATOR_AUTO_UPDATE = "0"
     let fetchCalled = false
 
     const result = await maybeAutoRefreshPluginCache({
@@ -187,6 +187,28 @@ test("auto update is disabled by env var", async () => {
 
     expect(result).toEqual({ checked: false, cleared: false, reason: "disabled" })
     expect(fetchCalled).toBe(false)
+  })
+})
+
+test("auto update honors the legacy OPENCODE_SKILL_CREATOR_AUTO_UPDATE env var", async () => {
+  await withHome(async () => {
+    process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE = "0"
+    try {
+      let fetchCalled = false
+      const result = await maybeAutoRefreshPluginCache({
+        currentVersion: "0.2.13",
+        now: 30_000,
+        fetchImpl: async () => {
+          fetchCalled = true
+          return new Response("{}", { status: 200 })
+        },
+      })
+
+      expect(result).toEqual({ checked: false, cleared: false, reason: "disabled" })
+      expect(fetchCalled).toBe(false)
+    } finally {
+      delete process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE
+    }
   })
 })
 
@@ -204,12 +226,29 @@ test("auto update swallows registry errors", async () => {
   })
 })
 
-test("plugin startup exposes tools when auto update is disabled", async () => {
+test("plugin setup registers tools through the V2 tool transform when auto update is disabled", async () => {
   await withHome(async () => {
-    process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE = "0"
+    process.env.OPENCODE2_SKILL_CREATOR_AUTO_UPDATE = "0"
 
-    const plugin = await SkillCreatorPlugin({} as never)
+    const tools: Array<{ name: string }> = []
+    const ctx = {
+      tool: {
+        transform: async (
+          callback: (editor: { add: (tool: unknown) => void }) => void,
+        ) => {
+          callback({ add: (tool) => tools.push(tool as { name: string }) })
+          return { dispose: async () => {} }
+        },
+      },
+      skill: {
+        list: async () => ({ data: [] }),
+      },
+    }
 
-    expect(plugin.tool?.skill_validate).toBeDefined()
+    expect(SkillCreatorPlugin.id).toBe("opencode2-skill-creator")
+    await SkillCreatorPlugin.setup(ctx as never)
+
+    expect(tools.some((tool) => tool.name === "skill_validate")).toBe(true)
+    expect(tools.some((tool) => tool.name === "skill_serve_review")).toBe(true)
   })
 })

@@ -1,6 +1,6 @@
 ---
-name: opencode-skill-creator
-description: Create, test, evaluate, optimize, and package OpenCode skills with the opencode-skill-creator plugin. Use when users explicitly mention opencode-skill-creator, OpenCode Skill Creator, creating an OpenCode skill, editing an OpenCode SKILL.md, running skill evals, benchmarking skill performance, or optimizing an OpenCode skill description. Do not use for generic Claude Code or Superpowers skill creation unless the user asks to port that workflow to OpenCode.
+name: opencode2-skill-creator
+description: Create, test, evaluate, optimize, and package OpenCode skills with the opencode2-skill-creator plugin. Use when users explicitly mention opencode2-skill-creator, OpenCode Skill Creator, creating an OpenCode skill, editing an OpenCode SKILL.md, running skill evals, benchmarking skill performance, or optimizing an OpenCode skill description. Do not use for generic Claude Code or Superpowers skill creation unless the user asks to port that workflow to OpenCode.
 ---
 
 # OpenCode Skill Creator
@@ -68,7 +68,7 @@ If the user explicitly asks to skip intake, warn that final quality and workflow
 
 Proactively ask questions about edge cases, input/output formats, example files, success criteria, and dependencies. Use a buddy/shadowing stance: mirror the user's real workflow, terminology, handoffs, and decision points. Wait to write test prompts until you've got this part ironed out.
 
-Check available MCPs — if useful for research (searching docs, finding similar skills, looking up best practices), research in parallel via the Task tool (using `general` or `explore` subagent types) if available, otherwise inline. Come prepared with context to reduce burden on the user.
+Check available MCPs — if useful for research (searching docs, finding similar skills, looking up best practices), research in parallel via the subagent tool (using `general` or `explore` subagent types) if available, otherwise inline. Come prepared with context to reduce burden on the user.
 
 ### Write the SKILL.md
 
@@ -183,7 +183,7 @@ Put results in `<skill-name>-workspace/` next to the staged skill directory in t
 
 ### Step 1: Spawn all runs (with-skill AND baseline) in the same turn
 
-For each test case, spawn two Task tool invocations (using `general` subagent type) in the same turn — one with the skill, one without. This is important: don't spawn the with-skill runs first and then come back for baselines later. Launch everything at once so it all finishes around the same time.
+For each test case, spawn two subagent tool invocations (using `general` subagent type) in the same turn — one with the skill, one without. This is important: don't spawn the with-skill runs first and then come back for baselines later. Launch everything at once so it all finishes around the same time.
 
 **With-skill run:**
 
@@ -198,7 +198,7 @@ Execute this task:
 
 **Baseline run** (same prompt, but the baseline depends on context):
 - **Creating a new skill**: no skill at all. Same prompt, no skill path, save to `without_skill/outputs/`.
-- **Improving an existing skill**: the old version. Before editing, snapshot the skill (`cp -r <skill-path> <workspace>/skill-snapshot/`), then point the baseline Task tool invocation at the snapshot. Save to `old_skill/outputs/`.
+- **Improving an existing skill**: the old version. Before editing, snapshot the skill (`cp -r <skill-path> <workspace>/skill-snapshot/`), then point the baseline subagent tool invocation at the snapshot. Save to `old_skill/outputs/`.
 
 Write an `eval_metadata.json` for each test case (assertions can be empty for now). Give each eval a descriptive name based on what it's testing — not just "eval-0". Use this name for the directory too. If this iteration uses new or modified eval prompts, create these files for each new eval directory — don't assume they carry over from previous iterations.
 
@@ -221,7 +221,7 @@ Update the `eval_metadata.json` files and `evals/evals.json` with the assertions
 
 ### Step 3: As runs complete, capture timing data
 
-When each Task tool invocation completes, you receive a notification containing `total_tokens` and `duration_ms`. Save this data immediately to `timing.json` in the run directory:
+When each subagent tool invocation completes, you receive a notification containing `total_tokens` and `duration_ms`. Save this data immediately to `timing.json` in the run directory:
 
 ```json
 {
@@ -239,7 +239,7 @@ Once all runs are done:
 
 Before launching review, enforce this gate: every eval must have paired comparison outputs (`with_skill` plus one baseline: `without_skill` or `old_skill`). Do not continue to review if pairs are missing unless the user explicitly asks to proceed with partial data.
 
-1. **Grade each run** — spawn a grader Task (using `general` subagent type), or grade inline, that reads `agents/grader.md` and evaluates each assertion against the outputs. Save results to `grading.json` in each run directory. The grading.json expectations array must use the fields `text`, `passed`, and `evidence` (not `name`/`met`/`details` or other variants) — the viewer depends on these exact field names. For assertions that can be checked programmatically, write and run a script rather than eyeballing it — scripts are faster, more reliable, and can be reused across iterations.
+1. **Grade each run** — spawn a grader subagent (using `general` subagent type), or grade inline, that reads `agents/grader.md` and evaluates each assertion against the outputs. Save results to `grading.json` in each run directory. The grading.json expectations array must use the fields `text`, `passed`, and `evidence` (not `name`/`met`/`details` or other variants) — the viewer depends on these exact field names. For assertions that can be checked programmatically, write and run a script rather than eyeballing it — scripts are faster, more reliable, and can be reused across iterations.
 
 2. **Aggregate into benchmark** — use the `skill_aggregate_benchmark` tool:
    ```
@@ -319,7 +319,7 @@ This is the heart of the loop. You've run the test cases, the user has reviewed 
 
 3. **Explain the why.** Try hard to explain the **why** behind everything you're asking the model to do. Today's LLMs are *smart*. They have good theory of mind and when given a good harness can go beyond rote instructions and really make things happen. Even if the feedback from the user is terse or frustrated, try to actually understand the task and why the user is writing what they wrote, and what they actually wrote, and then transmit this understanding into the instructions. If you find yourself writing ALWAYS or NEVER in all caps, or using super rigid structures, that's a yellow flag — if possible, reframe and explain the reasoning so that the model understands why the thing you're asking for is important. That's a more humane, powerful, and effective approach.
 
-4. **Look for repeated work across test cases.** Read the transcripts from the test runs and notice if the Task tool invocations all independently wrote similar helper scripts or took the same multi-step approach to something. If all 3 test cases resulted in the agent writing a `create_docx.py` or a `build_chart.py`, that's a strong signal the skill should bundle that script. Write it once, put it in `scripts/`, and tell the skill to use it. This saves every future invocation from reinventing the wheel.
+4. **Look for repeated work across test cases.** Read the transcripts from the test runs and notice if the subagent tool invocations all independently wrote similar helper scripts or took the same multi-step approach to something. If all 3 test cases resulted in the agent writing a `create_docx.py` or a `build_chart.py`, that's a strong signal the skill should bundle that script. Write it once, put it in `scripts/`, and tell the skill to use it. This saves every future invocation from reinventing the wheel.
 
 This task is pretty important (we are trying to create billions a year in economic value here!) and your thinking time is not the blocker; take your time and really mull things over. I'd suggest writing a draft revision and then looking at it anew and making improvements. Really do your best to get into the head of the user and understand what they want and need.
 
@@ -344,7 +344,7 @@ Keep going until:
 
 For situations where you want a more rigorous comparison between two versions of a skill (e.g., the user asks "is the new version actually better?"), there's a blind comparison system. Read `agents/comparator.md` and `agents/analyzer.md` for the details. The basic idea is: give two outputs to an independent agent without telling it which is which, and let it judge quality. Then analyze why the winner won.
 
-This is optional, requires the Task tool (using `general` subagent type), and most users won't need it. The human review loop is usually sufficient.
+This is optional, requires the subagent tool (using `general` subagent type), and most users won't need it. The human review loop is usually sufficient.
 
 ---
 
@@ -379,7 +379,7 @@ The key thing to avoid: don't make should-not-trigger queries obviously irreleva
 
 Present the eval set to the user for review using the HTML template:
 
-1. Read the template from `templates/eval-review.html` (located in the opencode-skill-creator skill directory, alongside this SKILL.md)
+1. Read the template from `templates/eval-review.html` (located in the opencode2-skill-creator skill directory, alongside this SKILL.md)
 2. Replace the placeholders:
    - `__EVAL_DATA_PLACEHOLDER__` → the JSON array of eval items (no quotes around it — it's a JS variable assignment)
    - `__SKILL_NAME_PLACEHOLDER__` → the skill's name
@@ -437,7 +437,7 @@ You can validate the skill before installation by calling the `skill_validate` t
 
 ## Available plugin tools
 
-The opencode-skill-creator plugin provides these custom tools that are available during your session:
+The opencode2-skill-creator plugin provides these custom tools that are available during your session:
 
 - **`skill_validate`** — Validate a skill's SKILL.md structure and frontmatter
 - **`skill_parse`** — Parse a SKILL.md and return its name, description, and content length
@@ -454,7 +454,7 @@ The opencode-skill-creator plugin provides these custom tools that are available
 
 ## Reference files
 
-The agents/ directory contains instructions for specialized tasks (used via the Task tool). Read them when you need to spawn the relevant task.
+The agents/ directory contains instructions for specialized tasks (used via the subagent tool). Read them when you need to spawn the relevant task.
 
 - `agents/grader.md` — How to evaluate assertions against outputs
 - `agents/comparator.md` — How to do blind A/B comparison between two outputs

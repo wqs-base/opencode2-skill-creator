@@ -11,9 +11,16 @@ import {
 } from "fs"
 import { join } from "path"
 
-export const SKILL_NAME = "opencode-skill-creator"
+export const SKILL_NAME = "opencode2-skill-creator"
+// Older plugin-owned skill folder names. Both were installed under the
+// pre-rename names and are archived so they stop loading next to the current
+// skill.
 export const LEGACY_SKILL_NAME = "skill-creator"
-export const INSTALL_VERSION_FILE = ".opencode-skill-creator-version"
+export const LEGACY_SKILL_NAMES = ["opencode-skill-creator", "skill-creator"] as const
+export const INSTALL_VERSION_FILE = ".opencode2-skill-creator-version"
+// Marker written by every pre-rename install. Used to identify plugin-owned
+// legacy folders without touching third-party skills.
+export const LEGACY_INSTALL_VERSION_FILE = ".opencode-skill-creator-version"
 
 export interface EnsureBundledSkillInstalledOptions {
   bundledSkillDir: string
@@ -40,10 +47,14 @@ function defaultBackupTimestamp(): string {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "")
 }
 
-function uniqueBackupDir(skillsRoot: string, timestamp: string): string {
+function uniqueBackupDir(
+  skillsRoot: string,
+  legacySkillName: string,
+  timestamp: string,
+): string {
   const base = join(
     skillsRoot,
-    `${LEGACY_SKILL_NAME}.opencode-skill-creator-backup-${timestamp}`,
+    `${legacySkillName}.opencode2-skill-creator-backup-${timestamp}`,
   )
   if (!existsSync(base)) return base
 
@@ -58,12 +69,19 @@ function uniqueBackupDir(skillsRoot: string, timestamp: string): string {
 function archiveLegacySkill(args: {
   skillsRoot: string
   legacySkillDir: string
+  legacySkillName: string
   backupTimestamp: () => string
 }): void {
-  const legacyVersionFile = join(args.legacySkillDir, INSTALL_VERSION_FILE)
-  if (!existsSync(legacyVersionFile)) return
+  const hasMarker =
+    existsSync(join(args.legacySkillDir, LEGACY_INSTALL_VERSION_FILE)) ||
+    existsSync(join(args.legacySkillDir, INSTALL_VERSION_FILE))
+  if (!hasMarker) return
 
-  const backupDir = uniqueBackupDir(args.skillsRoot, args.backupTimestamp())
+  const backupDir = uniqueBackupDir(
+    args.skillsRoot,
+    args.legacySkillName,
+    args.backupTimestamp(),
+  )
 
   const backupSkillFile = join(args.legacySkillDir, "SKILL.md")
   if (existsSync(backupSkillFile)) {
@@ -78,7 +96,6 @@ export function ensureBundledSkillInstalled(
 ): void {
   const skillsRoot = join(options.configDir, "opencode", "skills")
   const skillsDir = join(skillsRoot, SKILL_NAME)
-  const legacySkillDir = join(skillsRoot, LEGACY_SKILL_NAME)
   const marker = join(skillsDir, "SKILL.md")
   const versionFile = join(skillsDir, INSTALL_VERSION_FILE)
   const userSkillFile = join(skillsDir, "SKILL.md")
@@ -119,24 +136,27 @@ export function ensureBundledSkillInstalled(
         }
       }
 
-      if (!existsSync(skillsDir)) {
-        renameSync(tmpInstallDir, skillsDir)
-      } else {
-        copyDirRecursive(tmpInstallDir, skillsDir)
-      }
+      // Copy instead of rename: renaming a directory can fail with EPERM on
+      // Windows while the freshly written temp directory is still being
+      // scanned by the OS.
+      copyDirRecursive(tmpInstallDir, skillsDir)
 
       writeFileSync(versionFile, `${options.packageVersion}\n`)
     }
 
-    if (existsSync(legacySkillDir)) {
+    for (const legacySkillName of LEGACY_SKILL_NAMES) {
+      const legacySkillDir = join(skillsRoot, legacySkillName)
+      if (!existsSync(legacySkillDir)) continue
+
       archiveLegacySkill({
         skillsRoot,
         legacySkillDir,
+        legacySkillName,
         backupTimestamp: options.backupTimestamp ?? defaultBackupTimestamp,
       })
     }
   } catch (error) {
-    options.onError?.("Failed to install opencode-skill-creator skill", error)
+    options.onError?.("Failed to install opencode2-skill-creator skill", error)
   } finally {
     if (existsSync(tmpInstallDir)) {
       rmSync(tmpInstallDir, { recursive: true, force: true })

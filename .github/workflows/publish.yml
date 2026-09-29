@@ -52,7 +52,7 @@ jobs:
           npm_exists=false
           release_exists=false
 
-          if npm view "opencode-skill-creator@${VERSION}" version >/dev/null 2>&1; then
+          if npm view "opencode2-skill-creator@${VERSION}" version >/dev/null 2>&1; then
             npm_exists=true
           fi
 
@@ -85,7 +85,7 @@ jobs:
         id: npm
         run: |
           VERSION="${{ steps.version.outputs.value }}"
-          if npm view "opencode-skill-creator@${VERSION}" version >/dev/null 2>&1; then
+          if npm view "opencode2-skill-creator@${VERSION}" version >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -94,7 +94,7 @@ jobs:
       - name: Publish to npm
         # npm trusted publishing is bound to this repository/workflow on npmjs.com.
         # Keep the guard explicit so forks and non-main refs cannot publish.
-        if: steps.npm.outputs.exists != 'true' && github.repository == 'antongulin/opencode-skill-creator' && github.ref == 'refs/heads/main'
+        if: steps.npm.outputs.exists != 'true' && github.repository == 'wqs-base/opencode2-skill-creator' && github.ref == 'refs/heads/main'
         run: npm publish --access public --provenance
         working-directory: plugin
 
@@ -119,4 +119,4 @@ jobs:
           gh release create "$TAG" \
             --target "${{ steps.version.outputs.target_sha }}" \
             --title "$TAG" \
-            --notes "Automated release for opencode-skill-creator $TAG"
+            --notes "Automated release for opencode2-skill-creator $TAG"

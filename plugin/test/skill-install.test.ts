@@ -12,6 +12,7 @@ import { basename, dirname, join } from "node:path"
 import {
   ensureBundledSkillInstalled,
   INSTALL_VERSION_FILE,
+  LEGACY_INSTALL_VERSION_FILE,
   LEGACY_SKILL_NAME,
   SKILL_NAME,
 } from "../lib/skill-install"
@@ -89,7 +90,7 @@ test("ensureBundledSkillInstalled archives plugin-owned legacy skill folders so 
     const installedSkillDir = join(skillsRoot, SKILL_NAME)
     const backupDir = join(
       skillsRoot,
-      `${LEGACY_SKILL_NAME}.opencode-skill-creator-backup-20260516-153045`,
+      `${LEGACY_SKILL_NAME}.opencode2-skill-creator-backup-20260516-153045`,
     )
 
     expect(existsSync(join(installedSkillDir, "SKILL.md"))).toBe(true)
@@ -98,6 +99,36 @@ test("ensureBundledSkillInstalled archives plugin-owned legacy skill folders so 
     expect(readFileSync(join(backupDir, "SKILL.md.backup"), "utf-8")).toBe(
       "legacy custom skill\n",
     )
+  })
+})
+
+test("ensureBundledSkillInstalled archives the pre-rename opencode-skill-creator folder", () => {
+  withTempDir((root) => {
+    const bundledSkillDir = createBundledSkill(root)
+    const configDir = join(root, "config")
+    const skillsRoot = join(configDir, "opencode", "skills")
+    const legacySkillDir = join(skillsRoot, "opencode-skill-creator")
+    mkdirSync(legacySkillDir, { recursive: true })
+    writeFileSync(join(legacySkillDir, LEGACY_INSTALL_VERSION_FILE), "0.2.25\n")
+    writeFileSync(join(legacySkillDir, "SKILL.md"), "old plugin-owned skill\n")
+
+    ensureBundledSkillInstalled({
+      bundledSkillDir,
+      configDir,
+      packageVersion: "1.2.3",
+      backupTimestamp: () => "20260516-153045",
+    })
+
+    const backupDir = join(
+      skillsRoot,
+      "opencode-skill-creator.opencode2-skill-creator-backup-20260516-153045",
+    )
+
+    expect(existsSync(legacySkillDir)).toBe(false)
+    expect(readFileSync(join(backupDir, "SKILL.md.backup"), "utf-8")).toBe(
+      "old plugin-owned skill\n",
+    )
+    expect(existsSync(join(skillsRoot, SKILL_NAME, "SKILL.md"))).toBe(true)
   })
 })
 
@@ -131,7 +162,7 @@ test("ensureBundledSkillInstalled keeps archiving legacy folders when a timestam
     const legacySkillDir = join(skillsRoot, LEGACY_SKILL_NAME)
     const existingBackupDir = join(
       skillsRoot,
-      `${LEGACY_SKILL_NAME}.opencode-skill-creator-backup-20260516-153045`,
+      `${LEGACY_SKILL_NAME}.opencode2-skill-creator-backup-20260516-153045`,
     )
     mkdirSync(legacySkillDir, { recursive: true })
     mkdirSync(existingBackupDir, { recursive: true })
@@ -148,7 +179,7 @@ test("ensureBundledSkillInstalled keeps archiving legacy folders when a timestam
 
     const collisionBackupDir = join(
       skillsRoot,
-      `${LEGACY_SKILL_NAME}.opencode-skill-creator-backup-20260516-153045-1`,
+      `${LEGACY_SKILL_NAME}.opencode2-skill-creator-backup-20260516-153045-1`,
     )
 
     expect(existsSync(legacySkillDir)).toBe(false)
@@ -177,7 +208,7 @@ test("ensureBundledSkillInstalled reports install failures without throwing", ()
     ).not.toThrow()
 
     expect(errors).toHaveLength(1)
-    expect(errors[0].message).toBe("Failed to install opencode-skill-creator skill")
+    expect(errors[0].message).toBe("Failed to install opencode2-skill-creator skill")
     expect(errors[0].error).toBeInstanceOf(Error)
   })
 })

@@ -701,11 +701,16 @@ export async function serveReview(opts: ServeReviewOptions): Promise<{
   const serverUrl = `http://localhost:${actualPort}`
 
   if (openBrowser) {
-    // Open browser (best-effort, non-blocking)
+    // Open browser (best-effort, non-blocking). `open` is macOS-specific; on
+    // other platforms this simply fails and the "error" handler keeps the
+    // failure from surfacing as an unhandled process error.
     try {
       const openProc = spawn("open", [serverUrl], {
         detached: true,
         stdio: "ignore",
+      })
+      openProc.on("error", () => {
+        /* ignore — headless environment or unsupported platform */
       })
       openProc.unref()
     } catch {

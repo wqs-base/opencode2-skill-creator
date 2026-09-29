@@ -52,13 +52,17 @@ export function validateSkill(skillPath: string): ValidationResult {
     return { valid: false, message: "SKILL.md not found" }
   }
 
-  const content = readFileSync(skillMdPath, "utf-8")
+  // Normalize CRLF so skills authored or checked out on Windows validate the
+  // same as LF skills. A trailing `\r` otherwise prevents the key/value regex
+  // below from matching.
+  const content = readFileSync(skillMdPath, "utf-8").replace(/\r\n/g, "\n")
   if (!content.startsWith("---")) {
     return { valid: false, message: "No YAML frontmatter found" }
   }
 
-  // Extract frontmatter text
-  const match = content.match(/^---\n([\s\S]*?)\n---/)
+  // Extract frontmatter text. Tolerate CRLF line endings so skills authored
+  // or checked out on Windows validate the same as LF skills.
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
   if (!match) {
     return { valid: false, message: "Invalid frontmatter format" }
   }

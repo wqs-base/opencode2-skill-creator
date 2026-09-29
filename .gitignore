@@ -20,6 +20,7 @@ tmp/
 
 # Package manager installs
 plugin/node_modules/
+plugin/package-lock.json
 
 # Marketing skills (project-level only)
 .opencode/

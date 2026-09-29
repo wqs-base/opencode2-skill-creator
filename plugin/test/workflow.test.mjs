@@ -48,7 +48,7 @@ test("publish workflow uses npm trusted publishing provenance", () => {
   assert.match(workflow, /forks and non-main refs cannot publish/)
   assert.match(
     workflow,
-    /if:\s*steps\.npm\.outputs\.exists != 'true' && github\.repository == 'antongulin\/opencode-skill-creator' && github\.ref == 'refs\/heads\/main'\s+run:\s*npm publish --access public --provenance/s,
+    /if:\s*steps\.npm\.outputs\.exists != 'true' && github\.repository == 'wqs-base\/opencode2-skill-creator' && github\.ref == 'refs\/heads\/main'\s+run:\s*npm publish --access public --provenance/s,
   )
   assert.match(workflow, /run:\s*npm publish --access public --provenance\s+working-directory:\s*plugin/s)
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN/)

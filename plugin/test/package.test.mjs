@@ -14,7 +14,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import test from "node:test"
 
 const pluginSourcePath = fileURLToPath(new URL("../skill-creator.ts", import.meta.url))
@@ -22,6 +22,7 @@ const runtimeEntryPath = fileURLToPath(new URL("../runtime-entry.ts", import.met
 const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url))
 const pluginRoot = fileURLToPath(new URL("..", import.meta.url))
 const distEntryPath = fileURLToPath(new URL("../dist/skill-creator.js", import.meta.url))
+const distEntryUrl = pathToFileURL(distEntryPath).href
 const buildManifestPath = fileURLToPath(new URL("../dist/build-manifest.json", import.meta.url))
 const distAssetPaths = [
   "../dist/skill-creator.js",
@@ -49,6 +50,36 @@ function hashPluginSources() {
     hash.update("\0")
   }
   return hash.digest("hex")
+}
+
+// Load the compiled V2 plugin entrypoint and collect the tools it registers
+// through the OpenCode 2 `ctx.tool.transform` editor.
+async function loadPluginTools(entryPath) {
+  const mod = await import(entryPath)
+  const tools = new Map()
+  const ctx = {
+    tool: {
+      transform: async (callback) => {
+        callback({
+          add: (tool) => tools.set(tool.name, tool),
+          namespace: () => {},
+          list: () => [],
+          get: () => undefined,
+          update: () => {},
+          remove: () => {},
+        })
+        return { dispose: async () => {} }
+      },
+    },
+    skill: { list: async () => ({ data: [] }) },
+  }
+  await mod.default.setup(ctx)
+  return { mod, tools }
+}
+
+async function executeToolJson(tools, name, input) {
+  const result = await tools.get(name).execute(input, {})
+  return JSON.parse(result.content)
 }
 
 test("plugin source does not use import.meta.path", () => {
@@ -82,21 +113,23 @@ test("bundled skill uses the opencode-specific skill name", () => {
     "utf-8",
   )
 
-  assert.match(sourceSkill, /^name: opencode-skill-creator$/m)
-  assert.match(distSkill, /^name: opencode-skill-creator$/m)
+  assert.match(sourceSkill, /^name: opencode2-skill-creator$/m)
+  assert.match(distSkill, /^name: opencode2-skill-creator$/m)
 })
 
-test("compiled entrypoint imports as a plugin function", async () => {
-  const mod = await import(distEntryPath)
+test("compiled entrypoint imports as a V2 plugin definition", async () => {
+  const mod = await import(distEntryUrl)
 
-  assert.equal(typeof mod.default, "function")
+  assert.equal(typeof mod.default, "object")
+  assert.equal(mod.default.id, "opencode2-skill-creator")
+  assert.equal(typeof mod.default.setup, "function")
 })
 
-test("compiled entrypoint only exposes plugin functions for legacy OpenCode loaders", async () => {
-  const mod = await import(distEntryPath)
+test("compiled entrypoint only exposes the default plugin definition", async () => {
+  const mod = await import(`${distEntryUrl}?keys=${Date.now()}`)
 
   assert.deepEqual(Object.keys(mod), ["default"])
-  assert.equal(typeof mod.default, "function")
+  assert.equal(typeof mod.default.setup, "function")
 })
 
 test("compiled entrypoint does not depend on Bun runtime APIs", () => {
@@ -134,17 +167,14 @@ test("compiled review server runs in Node without a Bun runtime global", async (
     process.env.XDG_CONFIG_HOME = tempHome
     process.env.PATH = previousPath ? `${fakeBin}:${previousPath}` : fakeBin
 
-    const mod = await import(`${distEntryPath}?review-node=${Date.now()}`)
-    const hooks = await mod.default({})
-    const result = JSON.parse(
-      await hooks.tool.skill_serve_review.execute({
-        workspace,
-        port: 0,
-        skillName: "test-skill",
-        benchmarkPath,
-        allowPartial: true,
-      }),
-    )
+    const { tools } = await loadPluginTools(`${distEntryUrl}?review-node=${Date.now()}`)
+    const result = await executeToolJson(tools, "skill_serve_review", {
+      workspace,
+      port: 0,
+      skillName: "test-skill",
+      benchmarkPath,
+      allowPartial: true,
+    })
 
     try {
       const response = await fetch(result.url)
@@ -186,7 +216,7 @@ test("compiled review server runs in Node without a Bun runtime global", async (
       })
       assert.equal(oversizedResponse.status, 413)
     } finally {
-      await hooks.tool.skill_stop_review.execute({ workspace })
+      await tools.get("skill_stop_review").execute({ workspace }, {})
     }
   } finally {
     if (previousXdgConfigHome === undefined) {
@@ -221,16 +251,13 @@ test("compiled review server stop closes active browser connections", async () =
 
     process.env.XDG_CONFIG_HOME = tempHome
 
-    const mod = await import(`${distEntryPath}?review-stop=${Date.now()}`)
-    const hooks = await mod.default({})
-    const result = JSON.parse(
-      await hooks.tool.skill_serve_review.execute({
-        workspace,
-        port: 0,
-        skillName: "test-skill",
-        allowPartial: true,
-      }),
-    )
+    const { tools } = await loadPluginTools(`${distEntryUrl}?review-stop=${Date.now()}`)
+    const result = await executeToolJson(tools, "skill_serve_review", {
+      workspace,
+      port: 0,
+      skillName: "test-skill",
+      allowPartial: true,
+    })
     const url = new URL(result.url)
 
     socket = await new Promise((resolve, reject) => {
@@ -239,7 +266,7 @@ test("compiled review server stop closes active browser connections", async () =
     })
     socket.write("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n")
 
-    stopPromise = hooks.tool.skill_stop_review.execute({ workspace })
+    stopPromise = tools.get("skill_stop_review").execute({ workspace }, {})
     await Promise.race([
       stopPromise,
       new Promise((_, reject) => {
@@ -270,29 +297,28 @@ test("compiled plugin startup installs renamed skill and archives plugin-owned l
       "skill-creator",
     )
     mkdirSync(legacySkillDir, { recursive: true })
-    writeFileSync(join(legacySkillDir, ".opencode-skill-creator-version"), "0.2.12\n")
+    writeFileSync(join(legacySkillDir, ".opencode2-skill-creator-version"), "0.2.12\n")
     writeFileSync(join(legacySkillDir, "SKILL.md"), "legacy plugin-owned skill\n")
 
     process.env.XDG_CONFIG_HOME = tempHome
 
-    const mod = await import(`${distEntryPath}?startup=${Date.now()}`)
-    const hooks = await mod.default({})
+    const { tools } = await loadPluginTools(`${distEntryUrl}?startup=${Date.now()}`)
 
     const newSkillDir = join(
       tempHome,
       "opencode",
       "skills",
-      "opencode-skill-creator",
+      "opencode2-skill-creator",
     )
     const backupDirs = readdirSync(join(tempHome, "opencode", "skills")).filter(
-      (entry) => entry.startsWith("skill-creator.opencode-skill-creator-backup-"),
+      (entry) => entry.startsWith("skill-creator.opencode2-skill-creator-backup-"),
     )
 
-    assert.equal(typeof hooks.tool.skill_validate.execute, "function")
+    assert.equal(typeof tools.get("skill_validate").execute, "function")
     assert.equal(existsSync(join(newSkillDir, "SKILL.md")), true)
     assert.match(
       readFileSync(join(newSkillDir, "SKILL.md"), "utf-8"),
-      /^name: opencode-skill-creator$/m,
+      /^name: opencode2-skill-creator$/m,
     )
     assert.equal(existsSync(legacySkillDir), false)
     assert.equal(backupDirs.length, 1)

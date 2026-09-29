@@ -57,7 +57,7 @@ test("runProcess keeps only the tail of stderr", async () => {
 
 test("runProcess rejects spawn errors", async () => {
   await expect(
-    runProcess(["definitely-not-a-real-command-opencode-skill-creator"], {
+    runProcess(["definitely-not-a-real-command-opencode2-skill-creator"], {
       timeoutMs: 1_000,
     }),
   ).rejects.toThrow()

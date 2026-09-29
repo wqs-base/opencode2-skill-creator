@@ -85,7 +85,9 @@ When the user requests a durable behavior change, record it here or in the relev
 
 ## Child DOX Index
 
-This project is not yet indexed. Before continuing you must scan the project, build the DOX tree and replace this message with the actual index. Go deep and scan files recursively to properly evaluate complexity and create nested DOX files where needed.
+- `plugin/AGENTS.md` — OpenCode 2 plugin package: entrypoint, libs, build, installer, tests.
+- `opencode2-skill-creator/` — the skill bundle (SKILL.md + agents/references/templates). Owned by this file; mirrored byte-for-byte into `plugin/skill/` at build time.
+- `examples/`, `.github/` — owned by this file.
 <!-- DOX:END -->
 
 <!-- BASELINE:BEGIN (managed by agents-md-bootstrap) -->

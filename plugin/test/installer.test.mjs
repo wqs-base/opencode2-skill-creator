@@ -9,7 +9,7 @@ import { promisify } from "node:util"
 import test from "node:test"
 
 const execFileAsync = promisify(execFile)
-const binPath = fileURLToPath(new URL("../bin/opencode-skill-creator.js", import.meta.url))
+const binPath = fileURLToPath(new URL("../bin/opencode2-skill-creator.js", import.meta.url))
 
 async function createHome() {
   const home = mkdtempSync(join(tmpdir(), "opencode-installer-"))
@@ -23,6 +23,8 @@ async function runInstaller(home) {
       ...process.env,
       APPDATA: join(home, "AppData", "Roaming"),
       HOME: home,
+      // Windows resolves the home directory from USERPROFILE, not HOME.
+      USERPROFILE: home,
       XDG_CACHE_HOME: join(home, ".cache"),
       XDG_CONFIG_HOME: join(home, ".config"),
     },
@@ -46,9 +48,9 @@ function cachedPackagePath(home) {
     ".cache",
     "opencode",
     "packages",
-    "opencode-skill-creator@latest",
+    "opencode2-skill-creator@latest",
     "node_modules",
-    "opencode-skill-creator"
+    "opencode2-skill-creator"
   )
 }
 
@@ -124,12 +126,12 @@ test("global install updates opencode.jsonc when it exists and preserves comment
     const updated = readFileSync(path, "utf-8")
     assert.match(updated, /\/\/ Keep this comment/)
     assert.match(updated, /"existing-plugin"/)
-    assert.match(updated, /"opencode-skill-creator"/)
+    assert.match(updated, /"opencode2-skill-creator"/)
     assert.equal(existsSync(configPath(home, "opencode.json")), false)
   })
 })
 
-test("global install creates plugin array in existing opencode.jsonc without plugin key", async () => {
+test("global install creates a plugins array (OpenCode 2) in existing opencode.jsonc without a plugin key", async () => {
   await withHome(async (home) => {
     const path = configPath(home, "opencode.jsonc")
     writeFileSync(
@@ -147,9 +149,53 @@ test("global install creates plugin array in existing opencode.jsonc without plu
     const updated = readFileSync(path, "utf-8")
     assert.match(updated, /\/\/ Keep this comment/)
     assert.match(updated, /"model": "anthropic\/claude-sonnet-4-6"/)
-    assert.match(updated, /"plugin": \[/)
-    assert.match(updated, /"opencode-skill-creator"/)
+    assert.match(updated, /"plugins": \[/)
+    assert.match(updated, /"opencode2-skill-creator"/)
     assert.equal(existsSync(configPath(home, "opencode.json")), false)
+  })
+})
+
+test("global install appends to an existing native plugins array", async () => {
+  await withHome(async (home) => {
+    const path = configPath(home, "opencode.json")
+    writeFileSync(
+      path,
+      `{
+  "plugins": ["existing-plugin"]
+}
+`,
+      "utf-8"
+    )
+
+    const result = await runInstaller(home)
+
+    const updated = readFileSync(path, "utf-8")
+    assert.match(updated, /"existing-plugin"/)
+    assert.match(updated, /"opencode2-skill-creator"/)
+    assert.match(result.stdout, /Added "opencode2-skill-creator" to the "plugins" array\./)
+  })
+})
+
+test("global install keeps appending to a legacy V1 plugin array", async () => {
+  await withHome(async (home) => {
+    const path = configPath(home, "opencode.json")
+    writeFileSync(
+      path,
+      `{
+  "plugin": ["existing-plugin"]
+}
+`,
+      "utf-8"
+    )
+
+    const result = await runInstaller(home)
+
+    const updated = readFileSync(path, "utf-8")
+    assert.match(updated, /"plugin": \[/)
+    assert.match(updated, /"existing-plugin"/)
+    assert.match(updated, /"opencode2-skill-creator"/)
+    assert.doesNotMatch(updated, /"plugins":/)
+    assert.match(result.stdout, /Added "opencode2-skill-creator" to the "plugin" array\./)
   })
 })
 
@@ -169,7 +215,7 @@ test("global install prefers opencode.jsonc when both opencode.jsonc and opencod
 
     await runInstaller(home)
 
-    assert.match(readFileSync(jsoncPath, "utf-8"), /"opencode-skill-creator"/)
+    assert.match(readFileSync(jsoncPath, "utf-8"), /"opencode2-skill-creator"/)
     assert.equal(
       readFileSync(jsonPath, "utf-8"),
       `{
@@ -192,7 +238,7 @@ test("global install falls back to opencode.json when JSONC is absent", async ()
 
     const updated = readFileSync(jsonPath, "utf-8")
     assert.match(updated, /"json-plugin"/)
-    assert.match(updated, /"opencode-skill-creator"/)
+    assert.match(updated, /"opencode2-skill-creator"/)
   })
 })
 
@@ -216,14 +262,14 @@ test("global install clears stale OpenCode package cache", async () => {
   await withHome(async (home) => {
     const path = configPath(home, "opencode.json")
     writeFileSync(path, `{
-  "plugin": ["opencode-skill-creator"]
+  "plugin": ["opencode2-skill-creator"]
 }
 `, "utf-8")
 
     const packagePath = cachedPackagePath(home)
     await mkdir(packagePath, { recursive: true })
     writeFileSync(join(packagePath, "package.json"), `{
-  "name": "opencode-skill-creator",
+  "name": "opencode2-skill-creator",
   "version": "0.2.11",
   "main": "./skill-creator.ts"
 }
@@ -247,7 +293,7 @@ test("global install continues when stale cache cleanup fails", async () => {
     const packagePath = cachedPackagePath(home)
     await mkdir(packagePath, { recursive: true })
     writeFileSync(join(packagePath, "package.json"), `{
-  "name": "opencode-skill-creator",
+  "name": "opencode2-skill-creator",
   "version": "0.2.11",
   "main": "./skill-creator.ts"
 }
@@ -264,15 +310,15 @@ test("global install continues when stale cache cleanup fails", async () => {
     }
 
     const updated = readFileSync(path, "utf-8")
-    assert.match(updated, /"opencode-skill-creator"/)
+    assert.match(updated, /"opencode2-skill-creator"/)
   })
 })
 
-test("global install removes opencode-skill-creator plugin fault notifications", async () => {
+test("global install removes opencode2-skill-creator plugin fault notifications", async () => {
   await withHome(async (home) => {
     const path = configPath(home, "opencode.json")
     writeFileSync(path, `{
-  "plugin": ["opencode-skill-creator"]
+  "plugin": ["opencode2-skill-creator"]
 }
 `, "utf-8")
 
@@ -287,7 +333,7 @@ test("global install removes opencode-skill-creator plugin fault notifications",
           name: "UnknownError",
           data: {
             message:
-              "Failed to load plugin opencode-skill-creator: Stripping types is currently unsupported for files under node_modules",
+              "Failed to load plugin opencode2-skill-creator: Stripping types is currently unsupported for files under node_modules",
           },
         },
       },
@@ -310,7 +356,7 @@ test("global install removes opencode-skill-creator plugin fault notifications",
         session: "global",
         error: {
           name: "UnknownError",
-          data: { message: "Failed to load plugin opencode-skill-creator-extra: boom" },
+          data: { message: "Failed to load plugin opencode2-skill-creator-extra: boom" },
         },
       },
       {
@@ -328,7 +374,7 @@ test("global install removes opencode-skill-creator plugin fault notifications",
     assert.equal(notifications.length, 3)
     assert.equal(
       notifications.some((notification) =>
-        JSON.stringify(notification).includes("Failed to load plugin opencode-skill-creator:")
+        JSON.stringify(notification).includes("Failed to load plugin opencode2-skill-creator:")
       ),
       false
     )
@@ -340,11 +386,11 @@ test("global install removes opencode-skill-creator plugin fault notifications",
     )
     assert.equal(
       notifications.some((notification) =>
-        JSON.stringify(notification).includes("Failed to load plugin opencode-skill-creator-extra")
+        JSON.stringify(notification).includes("Failed to load plugin opencode2-skill-creator-extra")
       ),
       true
     )
-    assert.match(result.stdout, /Removed 1 stale opencode-skill-creator plugin fault notification/)
+    assert.match(result.stdout, /Removed 1 stale opencode2-skill-creator plugin fault notification/)
   })
 })
 
@@ -361,7 +407,7 @@ test("project install updates opencode.jsonc in the current directory", async ()
 
     const updated = readFileSync(path, "utf-8")
     assert.match(updated, /\/\/ project config/)
-    assert.match(updated, /"opencode-skill-creator"/)
+    assert.match(updated, /"opencode2-skill-creator"/)
     assert.equal(existsSync(join(project, "opencode.json")), false)
   })
 })

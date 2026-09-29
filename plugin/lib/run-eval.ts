@@ -96,50 +96,51 @@ export function buildEvalWarnings(results: EvalResultItem[]): string[] {
   return allZeroWithoutErrors ? [ALL_ZERO_WARNING] : []
 }
 
+export interface SkillLike {
+  name?: unknown
+  path?: unknown
+}
+
+/**
+ * Find installed skills that share the skill's base name. In OpenCode 2 the
+ * skill list comes from `ctx.skill.list()`, whose entries expose `name` and
+ * `path`.
+ */
 export function findSkillConflicts(
-  stdoutText: string,
+  skills: ReadonlyArray<SkillLike>,
   skillName: string,
 ): string[] {
-  try {
-    const parsed = JSON.parse(stdoutText) as unknown
-    if (!Array.isArray(parsed)) return []
+  if (!Array.isArray(skills)) return []
 
-    return parsed.flatMap((entry) => {
-      if (!entry || typeof entry !== "object") return []
-      const record = entry as Record<string, unknown>
-      if (record.name !== skillName) return []
-      return [
-        typeof record.location === "string" && record.location.trim()
-          ? record.location
-          : "unknown location",
-      ]
-    })
-  } catch {
-    return []
-  }
+  return skills.flatMap((skill) => {
+    if (!skill || typeof skill !== "object") return []
+    if (skill.name !== skillName) return []
+    return [
+      typeof skill.path === "string" && skill.path.trim()
+        ? skill.path
+        : "unknown location",
+    ]
+  })
 }
+
+export type SkillLister = () => Promise<ReadonlyArray<SkillLike>>
 
 export async function assertNoInstalledSkillConflict(
   skillName: string,
-  projectRoot: string,
+  listSkills: SkillLister,
 ): Promise<void> {
-  let result
+  let skills: ReadonlyArray<SkillLike>
   try {
-    result = await runProcess(["opencode", "debug", "skill"], {
-      cwd: projectRoot,
-      timeoutMs: 10_000,
-    })
+    skills = await listSkills()
   } catch {
     return
   }
 
-  if (isFailedProcess(result)) return
-
-  const locations = findSkillConflicts(result.stdout, skillName)
+  const locations = findSkillConflicts(skills, skillName)
   if (locations.length === 0) return
 
   throw new Error(
-    `skill_eval conflict: skill "${skillName}" is already available to opencode at ${locations.join(", ")}. Remove that installed skill or its skills.paths entry before running skill_eval. The eval tool creates a synthetic skill named "${skillName}-skill-<id>" and only counts that temporary skill as triggered; an installed skill with the base name can steal triggers and produce false negatives.`,
+    `skill_eval conflict: skill "${skillName}" is already available to opencode at ${locations.join(", ")}. Remove that installed skill or its skills entry before running skill_eval. The eval tool creates a synthetic skill named "${skillName}-skill-<id>" and only counts that temporary skill as triggered; an installed skill with the base name can steal triggers and produce false negatives.`,
   )
 }
 
@@ -196,18 +197,22 @@ export function symlinkProjectOpenCodeConfig(
     )
   }
 
-  const sourceSkills = join(sourceOpenCode, "skills")
-  if (!existsSync(sourceSkills)) return
+  // OpenCode 2 discovers skills from both `.opencode/skills/` and
+  // `.opencode/skill/`. Mirror whichever exist, excluding the tested skill.
+  for (const skillsDirName of ["skills", "skill"]) {
+    const sourceSkills = join(sourceOpenCode, skillsDirName)
+    if (!existsSync(sourceSkills)) continue
 
-  const targetSkills = join(targetOpenCode, "skills")
-  mkdirSync(targetSkills, { recursive: true })
-  for (const entry of readdirSync(sourceSkills, { withFileTypes: true })) {
-    if (entry.name === skillName) continue
-    linkOrCopyConfigEntry(
-      join(sourceSkills, entry.name),
-      join(targetSkills, entry.name),
-      entry.isDirectory(),
-    )
+    const targetSkills = join(targetOpenCode, skillsDirName)
+    mkdirSync(targetSkills, { recursive: true })
+    for (const entry of readdirSync(sourceSkills, { withFileTypes: true })) {
+      if (entry.name === skillName) continue
+      linkOrCopyConfigEntry(
+        join(sourceSkills, entry.name),
+        join(targetSkills, entry.name),
+        entry.isDirectory(),
+      )
+    }
   }
 }
 

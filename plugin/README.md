@@ -1,14 +1,16 @@
-# opencode-skill-creator
+# opencode2-skill-creator
 
-[![npm](https://img.shields.io/npm/v/opencode-skill-creator)](https://www.npmjs.com/package/opencode-skill-creator)
+[![npm](https://img.shields.io/npm/v/opencode2-skill-creator)](https://www.npmjs.com/package/opencode2-skill-creator)
 
 A **skill + plugin** for [OpenCode](https://opencode.ai) that helps you create, test, and optimize other OpenCode skills.
 
 This is a faithful adaptation of Anthropic's official [skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator) for Claude Code, fully rewritten to work with OpenCode's extensibility mechanisms. The Python scripts from the original have been ported to TypeScript and packaged as an OpenCode plugin with custom tools.
 
+> **Requires OpenCode 2.** This release targets the V2 plugin API (`@opencode/plugin`) and configures the `plugins` array. OpenCode 1 users should stay on `opencode2-skill-creator@0.2.x`.
+
 ## Install
 
-Package: https://www.npmjs.com/package/opencode-skill-creator
+Package: https://www.npmjs.com/package/opencode2-skill-creator
 
 ### Pick your option
 
@@ -25,21 +27,21 @@ Package: https://www.npmjs.com/package/opencode-skill-creator
 Run one command (global install, recommended):
 
 ```bash
-npx opencode-skill-creator install --global
+npx opencode2-skill-creator install --global
 ```
 
 Optional checks:
 
 ```bash
-npx opencode-skill-creator --version
-npx opencode-skill-creator --help
-npx opencode-skill-creator --about
+npx opencode2-skill-creator --version
+npx opencode2-skill-creator --help
+npx opencode2-skill-creator --about
 ```
 
 What this command does:
 
 1. Creates/updates `~/.config/opencode/opencode.json`
-2. Adds `"opencode-skill-creator"` to the `plugin` array
+2. Adds `"opencode2-skill-creator"` to the `plugins` array
 3. Leaves your existing plugins untouched
 
 Then:
@@ -56,7 +58,7 @@ Manual equivalent for the same result:
 
 ```json
 {
-  "plugin": ["opencode-skill-creator"]
+  "plugins": ["opencode2-skill-creator"]
 }
 ```
 
@@ -65,7 +67,7 @@ Manual equivalent for the same result:
 If you want project-only install instead, use:
 
 ```bash
-npx opencode-skill-creator install --project
+npx opencode2-skill-creator install --project
 ```
 
 ### Option B: you already have plugins
@@ -74,9 +76,9 @@ If your file already has plugins, append this package to the list:
 
 ```json
 {
-  "plugin": [
+  "plugins": [
     "your-existing-plugin",
-    "opencode-skill-creator"
+    "opencode2-skill-creator"
   ]
 }
 ```
@@ -90,7 +92,7 @@ Use global config when you want this plugin available everywhere.
 Command version:
 
 ```bash
-npx opencode-skill-creator install --global
+npx opencode2-skill-creator install --global
 ```
 
 1. Open (or create) `~/.config/opencode/opencode.json`
@@ -98,7 +100,7 @@ npx opencode-skill-creator install --global
 
 ```json
 {
-  "plugin": ["opencode-skill-creator"]
+  "plugins": ["opencode2-skill-creator"]
 }
 ```
 
@@ -111,7 +113,7 @@ Use project config when you want this plugin only for one repo.
 Command version:
 
 ```bash
-npx opencode-skill-creator install --project
+npx opencode2-skill-creator install --project
 ```
 
 1. Open (or create) `opencode.json` in that project root
@@ -119,7 +121,7 @@ npx opencode-skill-creator install --project
 
 ```json
 {
-  "plugin": ["opencode-skill-creator"]
+  "plugins": ["opencode2-skill-creator"]
 }
 ```
 
@@ -128,11 +130,11 @@ npx opencode-skill-creator install --project
 ### Option E: manual install (no npm)
 
 ```bash
-git clone https://github.com/antongulin/opencode-skill-creator.git
-cd opencode-skill-creator
+git clone https://github.com/wqs-base/opencode2-skill-creator.git
+cd opencode2-skill-creator
 
 # Install the skill (global)
-cp -r opencode-skill-creator/ ~/.config/opencode/skills/opencode-skill-creator/
+cp -r opencode2-skill-creator/ ~/.config/opencode/skills/opencode2-skill-creator/
 
 # Install the plugin (global)
 cp -r plugin/ ~/.config/opencode/plugins/skill-creator/
@@ -143,18 +145,18 @@ Then create `~/.config/opencode/package.json` if needed:
 ```json
 {
   "dependencies": {
-    "@opencode-ai/plugin": ">=1.0.0"
+    "@opencode/plugin": ">=2.0.0"
   }
 }
 ```
 
 ### What happens after install
 
-After you add `opencode-skill-creator` and restart OpenCode:
+After you add `opencode2-skill-creator` and restart OpenCode:
 
 1. OpenCode installs the plugin from npm automatically.
 2. The npm package loads compiled JavaScript from `dist/skill-creator.js`.
-3. On first plugin startup, it auto-copies skill files to `~/.config/opencode/skills/opencode-skill-creator/`.
+3. On first plugin startup, it auto-copies skill files to `~/.config/opencode/skills/opencode2-skill-creator/`.
 4. Restart OpenCode after changing config because plugin config is loaded at startup.
 
 ### Verify install
@@ -162,37 +164,37 @@ After you add `opencode-skill-creator` and restart OpenCode:
 Check that the skill file exists:
 
 ```bash
-ls ~/.config/opencode/skills/opencode-skill-creator/SKILL.md
+ls ~/.config/opencode/skills/opencode2-skill-creator/SKILL.md
 ```
 
 Then ask OpenCode:
 
 ```text
-Use opencode-skill-creator to create a skill that helps with API documentation.
+Use opencode2-skill-creator to create a skill that helps with API documentation.
 ```
 
-You should see it use the opencode-skill-creator workflow/tools.
+You should see it use the opencode2-skill-creator workflow/tools.
 
 ### Migration from the old `skill-creator` folder
 
 Earlier versions installed the bundled skill as the generic `skill-creator` skill. That could conflict with other plugins, including Superpowers, that also provide a skill with the same name.
 
-Current versions install the bundled skill as `opencode-skill-creator` instead. On startup, if the plugin finds an old plugin-owned folder at `~/.config/opencode/skills/skill-creator/`, it moves that folder to an inactive backup such as:
+Current versions install the bundled skill as `opencode2-skill-creator` instead. On startup, if the plugin finds an old plugin-owned folder at `~/.config/opencode/skills/skill-creator/`, it moves that folder to an inactive backup such as:
 
 ```text
-~/.config/opencode/skills/skill-creator.opencode-skill-creator-backup-YYYYMMDDTHHMMSS/
+~/.config/opencode/skills/skill-creator.opencode2-skill-creator-backup-YYYYMMDDTHHMMSS/
 ```
 
-The backup preserves user files and renames `SKILL.md` to `SKILL.md.backup` so OpenCode will not keep loading the old generic skill. If the old `skill-creator` folder does not contain the plugin's `.opencode-skill-creator-version` marker, the plugin leaves it untouched because it may belong to another plugin or a manually installed skill.
+The backup preserves user files and renames `SKILL.md` to `SKILL.md.backup` so OpenCode will not keep loading the old generic skill. If the old `skill-creator` folder does not contain the plugin's `.opencode2-skill-creator-version` marker, the plugin leaves it untouched because it may belong to another plugin or a manually installed skill.
 
 ### Troubleshooting
 
 - `I don't have opencode.json or opencode.jsonc`: create one in project root (or use global config path).
 - `Nothing changed after edit`: fully restart OpenCode.
-- `I already had plugins`: keep them; just add `opencode-skill-creator` to the same array.
-- `I want a clean reinstall`: delete `~/.config/opencode/skills/opencode-skill-creator/` and restart OpenCode.
-- `I still see another skill-creator skill`: if `~/.config/opencode/skills/skill-creator/` has no `.opencode-skill-creator-version` marker, it is not managed by this plugin and must be reviewed separately.
-- `npx command failed`: run `npx opencode-skill-creator --help` and then use `install` or `install --global`.
+- `I already had plugins`: keep them; just add `opencode2-skill-creator` to the same array.
+- `I want a clean reinstall`: delete `~/.config/opencode/skills/opencode2-skill-creator/` and restart OpenCode.
+- `I still see another skill-creator skill`: if `~/.config/opencode/skills/skill-creator/` has no `.opencode2-skill-creator-version` marker, it is not managed by this plugin and must be reviewed separately.
+- `npx command failed`: run `npx opencode2-skill-creator --help` and then use `install` or `install --global`.
 
 ### Compatibility fixes
 
@@ -205,7 +207,7 @@ The backup preserves user files and renames `SKILL.md` to `SKILL.md.backup` so O
 ### For LLMs / automation (compact)
 
 ```json
-{ "plugin": ["opencode-skill-creator"] }
+{ "plugins": ["opencode2-skill-creator"] }
 ```
 
 ## What it does
@@ -274,7 +276,7 @@ Once installed, OpenCode will automatically detect the skill when you ask it to 
 - "Help me make a skill that assists with database migrations"
 - "Optimize the description of my existing skill"
 
-OpenCode will load the opencode-skill-creator instructions and use the plugin tools to walk through the full workflow.
+OpenCode will load the opencode2-skill-creator instructions and use the plugin tools to walk through the full workflow.
 
 ## Architecture
 
@@ -287,15 +289,15 @@ This project has two components:
 
 The skill provides the workflow knowledge; the plugin provides the executable tools the agent calls during that workflow.
 
-On first startup, the plugin automatically copies the bundled skill files to `~/.config/opencode/skills/opencode-skill-creator/`. If you need to reinstall the skill (e.g., after an update), delete that directory and restart OpenCode.
+On first startup, the plugin automatically copies the bundled skill files to `~/.config/opencode/skills/opencode2-skill-creator/`. If you need to reinstall the skill (e.g., after an update), delete that directory and restart OpenCode.
 
 ## Project structure
 
 ```
-opencode-skill-creator/
+opencode2-skill-creator/
 ├── README.md
 ├── LICENSE                            # Apache 2.0
-├── opencode-skill-creator/            # The SKILL
+├── opencode2-skill-creator/            # The SKILL
 │   ├── SKILL.md                       # Main skill instructions
 │   ├── agents/
 │   │   ├── grader.md                  # Assertion evaluation
@@ -305,7 +307,7 @@ opencode-skill-creator/
 │   │   └── schemas.md                 # JSON schema definitions
 │   └── templates/
 │       └── eval-review.html           # Eval set review/edit UI
-└── plugin/                            # The PLUGIN (npm: opencode-skill-creator)
+└── plugin/                            # The PLUGIN (npm: opencode2-skill-creator)
     ├── package.json                   # npm package metadata
     ├── skill-creator.ts               # Entry point — registers all tools
     ├── skill/                         # Bundled copy of skill (auto-installed)
@@ -332,9 +334,9 @@ opencode-skill-creator/
 | Script execution | `python -m scripts.run_loop` | `skill_optimize_loop` tool call |
 | Eval viewer | `python generate_review.py` | `skill_serve_review` tool call |
 | Benchmarking | `python aggregate_benchmark.py` | `skill_aggregate_benchmark` tool call |
-| Dependencies | Python 3.11+, pyyaml | Bun (via OpenCode), @opencode-ai/plugin |
+| Dependencies | Python 3.11+, pyyaml | Bun (via OpenCode), @opencode/plugin |
 | Packaging | `.skill` zip files | npm package + skill directory |
-| Subagents | Built-in subagent concept | Task tool with `general`/`explore` types |
+| Subagents | Built-in subagent concept | `subagent` tool with `general`/`explore` agents |
 
 ## License
 

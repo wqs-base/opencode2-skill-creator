@@ -17,7 +17,7 @@ items. That matches the `EvalItem` interface used by the plugin.
 In OpenCode, ask:
 
 ```text
-Use opencode-skill-creator to run skill_eval on examples/docker-compose-helper with examples/docker-compose-helper/evals/eval-set.json.
+Use opencode2-skill-creator to run skill_eval on examples/docker-compose-helper with examples/docker-compose-helper/evals/eval-set.json.
 Use runsPerQuery 3 and triggerThreshold 0.5.
 ```
 
@@ -40,7 +40,7 @@ triggers in less than 50%. With the defaults above, each query runs 3 times.
 Ask:
 
 ```text
-Use opencode-skill-creator to run skill_optimize_loop for examples/docker-compose-helper using examples/docker-compose-helper/evals/eval-set.json.
+Use opencode2-skill-creator to run skill_optimize_loop for examples/docker-compose-helper using examples/docker-compose-helper/evals/eval-set.json.
 Use maxIterations 5, runsPerQuery 3, triggerThreshold 0.5.
 ```
 
@@ -65,7 +65,7 @@ Trigger evals only test whether OpenCode chooses the skill. To compare task
 quality, run paired task outputs with and without the skill, then ask:
 
 ```text
-Use opencode-skill-creator to run skill_aggregate_benchmark for my eval workspace, then open the review viewer.
+Use opencode2-skill-creator to run skill_aggregate_benchmark for my eval workspace, then open the review viewer.
 ```
 
 Expected output: `benchmark.json`, `benchmark.md`, and a review viewer showing

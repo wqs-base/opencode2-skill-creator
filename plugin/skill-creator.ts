@@ -7,13 +7,15 @@
  * original Anthropic skill-creator.
  *
  * Install via npm:
- *   Add "opencode-skill-creator" to the "plugin" array in opencode.json
+ *   Add "opencode2-skill-creator" to the "plugins" array in opencode.json
  *
- * Or install locally:
+ * Or install locally (OpenCode 2):
  *   Copy this directory to .opencode/plugins/ or ~/.config/opencode/plugins/
+ *
+ * Requires OpenCode 2 and the @opencode/plugin V2 plugin API.
  */
 
-import { type Plugin, tool } from "@opencode-ai/plugin"
+import { Plugin } from "@opencode/plugin"
 import { join, dirname, isAbsolute, relative, sep } from "path"
 import { homedir } from "os"
 import { fileURLToPath } from "url"
@@ -56,8 +58,8 @@ const TEMPLATES_DIR = join(PLUGIN_DIR, "templates")
 const BUNDLED_SKILL_DIR = join(PLUGIN_DIR, "skill")
 const PACKAGE_JSON_PATH = join(PLUGIN_DIR, "package.json")
 export const AUTO_UPDATE_TTL_MS = 24 * 60 * 60 * 1000
-export const AUTO_UPDATE_STATUS_FILE = "opencode-skill-creator-update-check.json"
-const NPM_REGISTRY_URL = "https://registry.npmjs.org/opencode-skill-creator/latest"
+export const AUTO_UPDATE_STATUS_FILE = "opencode2-skill-creator-update-check.json"
+const NPM_REGISTRY_URL = "https://registry.npmjs.org/opencode2-skill-creator/latest"
 const AUTO_UPDATE_TIMEOUT_MS = 2500
 const GOLD_STANDARDS_PATH = join(
   homedir(),
@@ -174,7 +176,7 @@ export function getAutoUpdatePaths() {
     cacheDir,
     "opencode",
     "packages",
-    "opencode-skill-creator@latest",
+    "opencode2-skill-creator@latest",
   )
 
   return {
@@ -182,12 +184,12 @@ export function getAutoUpdatePaths() {
     cachedPackageDir: join(
       packageCacheRoot,
       "node_modules",
-      "opencode-skill-creator",
+      "opencode2-skill-creator",
     ),
     cachedPackageJson: join(
       packageCacheRoot,
       "node_modules",
-      "opencode-skill-creator",
+      "opencode2-skill-creator",
       "package.json",
     ),
     statusPath: join(configDir, "opencode", AUTO_UPDATE_STATUS_FILE),
@@ -265,7 +267,10 @@ export async function maybeAutoRefreshPluginCache(
   options: AutoUpdateOptions = {},
 ): Promise<AutoUpdateResult> {
   try {
-    if (process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE === "0") {
+    const autoUpdateDisabled =
+      process.env.OPENCODE2_SKILL_CREATOR_AUTO_UPDATE === "0" ||
+      process.env.OPENCODE_SKILL_CREATOR_AUTO_UPDATE === "0"
+    if (autoUpdateDisabled) {
       return { checked: false, cleared: false, reason: "disabled" }
     }
 
@@ -334,49 +339,102 @@ export async function maybeAutoRefreshPluginCache(
 const activeServers: Map<string, { stop: () => Promise<void>; url: string }> = new Map()
 
 // ---------------------------------------------------------------------------
+// Tool definitions
+// ---------------------------------------------------------------------------
+
+interface ToolSpec {
+  name: string
+  description: string
+  properties?: Record<string, unknown>
+  required?: string[]
+  execute: (args: Record<string, any>) => Promise<string> | string
+}
+
+/**
+ * Build a V2 tool definition. OpenCode 2 registers tools through
+ * `ctx.tool.transform` and describes their input with JSON Schema instead of
+ * the V1 `tool()` helper's argument map.
+ */
+function defineTool(spec: ToolSpec) {
+  return {
+    name: spec.name,
+    description: spec.description,
+    input: {
+      type: "object",
+      properties: spec.properties ?? {},
+      required: spec.required ?? [],
+      additionalProperties: false,
+    },
+    // OpenCode 2 exposes tools to Code Mode's catalog only when they opt in
+    // with `codemode: true`. Agents running in Code Mode can then find these
+    // tools through `search`.
+    options: { codemode: true },
+    execute: async (input: unknown) => ({
+      content: await spec.execute((input ?? {}) as Record<string, any>),
+    }),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Plugin export
 // ---------------------------------------------------------------------------
 
-export const SkillCreatorPlugin: Plugin = async (ctx) => {
-  // Auto-install bundled skill files to ~/.config/opencode/skills/opencode-skill-creator/
-  ensureBundledSkillInstalled({
-    bundledSkillDir: BUNDLED_SKILL_DIR,
-    configDir: process.env.XDG_CONFIG_HOME || join(homedir(), ".config"),
-    packageVersion: PACKAGE_VERSION,
-    onError: (message, error) => console.warn(message, error),
-  })
-  void maybeAutoRefreshPluginCache()
+export const SkillCreatorPlugin = Plugin.define({
+  id: "opencode2-skill-creator",
+  async setup(ctx) {
+    // Auto-install bundled skill files to ~/.config/opencode/skills/opencode2-skill-creator/
+    ensureBundledSkillInstalled({
+      bundledSkillDir: BUNDLED_SKILL_DIR,
+      configDir: process.env.XDG_CONFIG_HOME || join(homedir(), ".config"),
+      packageVersion: PACKAGE_VERSION,
+      onError: (message, error) => console.warn(message, error),
+    })
+    void maybeAutoRefreshPluginCache()
 
-  return {
-    tool: {
+    // Skills available at the plugin's location. Used to detect a base-name
+    // conflict before running trigger evals.
+    const listAvailableSkills = async () => {
+      const result = await ctx.skill.list()
+      return result?.data ?? []
+    }
+
+    await ctx.tool.transform((editor) => {
+      const add = (spec: ToolSpec) => editor.add(defineTool(spec) as never)
+
       // ---------------------------------------------------------------
       // skill_validate — validate a skill's SKILL.md structure
       // ---------------------------------------------------------------
-      skill_validate: tool({
+      add({
+        name: "skill_validate",
         description:
           "Validate a skill directory. Checks that SKILL.md exists with well-formed YAML frontmatter, required fields, naming conventions, and description limits.",
-        args: {
-          skillPath: tool.schema
-            .string()
-            .describe("Path to the skill directory containing SKILL.md"),
+        properties: {
+          skillPath: {
+            type: "string",
+            description: "Path to the skill directory containing SKILL.md",
+          },
         },
+        required: ["skillPath"],
         async execute(args) {
           const result = validateSkill(args.skillPath)
           return JSON.stringify(result, null, 2)
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_parse — parse a skill's SKILL.md frontmatter
       // ---------------------------------------------------------------
-      skill_parse: tool({
+      add({
+        name: "skill_parse",
         description:
           "Parse a SKILL.md file and return its name, description, and full content.",
-        args: {
-          skillPath: tool.schema
-            .string()
-            .describe("Path to the skill directory containing SKILL.md"),
+        properties: {
+          skillPath: {
+            type: "string",
+            description: "Path to the skill directory containing SKILL.md",
+          },
         },
+        required: ["skillPath"],
         async execute(args) {
           const meta = parseSkillMd(args.skillPath)
           return JSON.stringify(
@@ -390,27 +448,34 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
             2,
           )
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_add_gold_standard — save high-performing descriptions
       // ---------------------------------------------------------------
-      skill_add_gold_standard: tool({
+      add({
+        name: "skill_add_gold_standard",
         description:
           "Save a durable gold-standard skill description example for future meta-learning experiments.",
-        args: {
-          skillName: tool.schema.string().describe("Skill name for this example"),
-          description: tool.schema
-            .string()
-            .describe("High-performing skill description"),
-          passRate: tool.schema
-            .number()
-            .describe("Observed pass rate as a decimal from 0 to 1"),
-          notes: tool.schema
-            .string()
-            .optional()
-            .describe("Optional notes about why this example worked"),
+        properties: {
+          skillName: {
+            type: "string",
+            description: "Skill name for this example",
+          },
+          description: {
+            type: "string",
+            description: "High-performing skill description",
+          },
+          passRate: {
+            type: "number",
+            description: "Observed pass rate as a decimal from 0 to 1",
+          },
+          notes: {
+            type: "string",
+            description: "Optional notes about why this example worked",
+          },
         },
+        required: ["skillName", "description", "passRate"],
         async execute(args) {
           const standard = addGoldStandard(GOLD_STANDARDS_PATH, {
             skillName: args.skillName,
@@ -420,91 +485,100 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
           })
           return JSON.stringify(standard, null, 2)
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_list_gold_standards — list saved examples
       // ---------------------------------------------------------------
-      skill_list_gold_standards: tool({
+      add({
+        name: "skill_list_gold_standards",
         description: "List saved gold-standard skill description examples.",
-        args: {},
         async execute() {
           return JSON.stringify(listGoldStandards(GOLD_STANDARDS_PATH), null, 2)
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_remove_gold_standard — remove a saved example
       // ---------------------------------------------------------------
-      skill_remove_gold_standard: tool({
+      add({
+        name: "skill_remove_gold_standard",
         description: "Remove a saved gold-standard skill description example by id.",
-        args: {
-          id: tool.schema.string().describe("Gold-standard example id"),
+        properties: {
+          id: { type: "string", description: "Gold-standard example id" },
         },
+        required: ["id"],
         async execute(args) {
           return JSON.stringify({
             removed: removeGoldStandard(GOLD_STANDARDS_PATH, args.id),
           })
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_get_gold_advice — format saved examples for prompt context
       // ---------------------------------------------------------------
-      skill_get_gold_advice: tool({
-        description: "Return formatted gold-standard advice for description optimization prompts.",
-        args: {},
+      add({
+        name: "skill_get_gold_advice",
+        description:
+          "Return formatted gold-standard advice for description optimization prompts.",
         async execute() {
           return JSON.stringify({ advice: getGoldAdvice(GOLD_STANDARDS_PATH) })
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_eval — run trigger evaluation for a skill description
       // ---------------------------------------------------------------
-      skill_eval: tool({
+      add({
+        name: "skill_eval",
         description:
           "Test whether a skill description causes OpenCode to invoke the skill for a set of queries. Runs each query against `opencode run` and checks if the skill was triggered. Returns pass/fail results per query.",
-        args: {
-          evalSetPath: tool.schema
-            .string()
-            .describe("Path to eval_set.json (array of {query, should_trigger})"),
-          skillPath: tool.schema
-            .string()
-            .describe("Path to the skill directory containing SKILL.md"),
-          descriptionOverride: tool.schema
-            .string()
-            .optional()
-            .describe("Override description to test (uses SKILL.md description if omitted)"),
-          numWorkers: tool.schema
-            .number()
-            .optional()
-            .describe("Parallel workers (default: 10)"),
-          timeout: tool.schema
-            .number()
-            .optional()
-            .describe("Timeout per query in seconds (default: 30)"),
-          runsPerQuery: tool.schema
-            .number()
-            .optional()
-            .describe("Number of runs per query for reliability (default: 3)"),
-          triggerThreshold: tool.schema
-            .number()
-            .optional()
-            .describe("Trigger rate threshold to count as triggered (default: 0.5)"),
-          triggerOnly: tool.schema
-            .boolean()
-            .optional()
-            .describe("Stop each eval run as soon as the synthetic skill is triggered and ignore later workflow failures (default: true)"),
-          model: tool.schema
-            .string()
-            .optional()
-            .describe("Model ID in provider/model format"),
-          agent: tool.schema
-            .string()
-            .optional()
-            .describe("OpenCode agent for trigger eval runs (default: build)"),
+        properties: {
+          evalSetPath: {
+            type: "string",
+            description: "Path to eval_set.json (array of {query, should_trigger})",
+          },
+          skillPath: {
+            type: "string",
+            description: "Path to the skill directory containing SKILL.md",
+          },
+          descriptionOverride: {
+            type: "string",
+            description:
+              "Override description to test (uses SKILL.md description if omitted)",
+          },
+          numWorkers: {
+            type: "number",
+            description: "Parallel workers (default: 10)",
+          },
+          timeout: {
+            type: "number",
+            description: "Timeout per query in seconds (default: 30)",
+          },
+          runsPerQuery: {
+            type: "number",
+            description: "Number of runs per query for reliability (default: 3)",
+          },
+          triggerThreshold: {
+            type: "number",
+            description: "Trigger rate threshold to count as triggered (default: 0.5)",
+          },
+          triggerOnly: {
+            type: "boolean",
+            description:
+              "Stop each eval run as soon as the synthetic skill is triggered and ignore later workflow failures (default: true)",
+          },
+          model: {
+            type: "string",
+            description: "Model ID in provider/model format",
+          },
+          agent: {
+            type: "string",
+            description: "OpenCode agent for trigger eval runs (default: build)",
+          },
         },
+        required: ["evalSetPath", "skillPath"],
         async execute(args) {
           const { readFileSync } = await import("fs")
           const evalSet: EvalItem[] = JSON.parse(
@@ -518,7 +592,7 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
 
           const meta = parseSkillMd(args.skillPath)
           const projectRoot = findProjectRoot()
-          await assertNoInstalledSkillConflict(meta.name, projectRoot)
+          await assertNoInstalledSkillConflict(meta.name, listAvailableSkills)
 
           const result = await runEval({
             evalSet,
@@ -536,38 +610,42 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
 
           return JSON.stringify(result, null, 2)
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_improve_description — LLM-powered description improvement
       // ---------------------------------------------------------------
-      skill_improve_description: tool({
+      add({
+        name: "skill_improve_description",
         description:
           "Call OpenCode to generate an improved skill description based on eval results. Uses the current description and failure patterns to propose a better one.",
-        args: {
-          skillPath: tool.schema
-            .string()
-            .describe("Path to the skill directory"),
-          evalResultsPath: tool.schema
-            .string()
-            .describe("Path to JSON file with eval results (output of skill_eval)"),
-          historyPath: tool.schema
-            .string()
-            .optional()
-            .describe("Path to JSON file with previous improvement history"),
-          model: tool.schema
-            .string()
-            .optional()
-            .describe("Model ID in provider/model format"),
-          logDir: tool.schema
-            .string()
-            .optional()
-            .describe("Directory to save improvement transcripts"),
-          iteration: tool.schema
-            .number()
-            .optional()
-            .describe("Current iteration number"),
+        properties: {
+          skillPath: {
+            type: "string",
+            description: "Path to the skill directory",
+          },
+          evalResultsPath: {
+            type: "string",
+            description: "Path to JSON file with eval results (output of skill_eval)",
+          },
+          historyPath: {
+            type: "string",
+            description: "Path to JSON file with previous improvement history",
+          },
+          model: {
+            type: "string",
+            description: "Model ID in provider/model format",
+          },
+          logDir: {
+            type: "string",
+            description: "Directory to save improvement transcripts",
+          },
+          iteration: {
+            type: "number",
+            description: "Current iteration number",
+          },
         },
+        required: ["skillPath", "evalResultsPath"],
         async execute(args) {
           const { readFileSync } = await import("fs")
           const meta = parseSkillMd(args.skillPath)
@@ -589,70 +667,75 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
 
           return JSON.stringify({ description: newDescription, charCount: newDescription.length })
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_optimize_loop — full eval→improve optimization loop
       // ---------------------------------------------------------------
-      skill_optimize_loop: tool({
+      add({
+        name: "skill_optimize_loop",
         description:
           "Run the full description optimization loop: split eval set into train/test, evaluate, improve description based on failures, repeat. Returns the best description found. This can take several minutes.",
-        args: {
-          evalSetPath: tool.schema
-            .string()
-            .describe("Path to eval_set.json"),
-          skillPath: tool.schema
-            .string()
-            .describe("Path to the skill directory"),
-          descriptionOverride: tool.schema
-            .string()
-            .optional()
-            .describe("Starting description override"),
-          maxIterations: tool.schema
-            .number()
-            .optional()
-            .describe("Max optimization iterations (default: 5)"),
-          numWorkers: tool.schema
-            .number()
-            .optional()
-            .describe("Parallel workers (default: 10)"),
-          timeout: tool.schema
-            .number()
-            .optional()
-            .describe("Timeout per query in seconds (default: 30)"),
-          runsPerQuery: tool.schema
-            .number()
-            .optional()
-            .describe("Runs per query (default: 3)"),
-          triggerThreshold: tool.schema
-            .number()
-            .optional()
-            .describe("Trigger rate threshold (default: 0.5)"),
-          triggerOnly: tool.schema
-            .boolean()
-            .optional()
-            .describe("Stop each eval run as soon as the synthetic skill is triggered and ignore later workflow failures (default: true)"),
-          holdout: tool.schema
-            .number()
-            .optional()
-            .describe("Test set holdout fraction (default: 0.4)"),
-          model: tool.schema
-            .string()
-            .optional()
-            .describe("Model ID in provider/model format"),
-          agent: tool.schema
-            .string()
-            .optional()
-            .describe("OpenCode agent for trigger eval runs (default: build)"),
-          liveReportPath: tool.schema
-            .string()
-            .optional()
-            .describe("Path to write live HTML report"),
-          logDir: tool.schema
-            .string()
-            .optional()
-            .describe("Directory for improvement transcripts"),
+        properties: {
+          evalSetPath: {
+            type: "string",
+            description: "Path to eval_set.json",
+          },
+          skillPath: {
+            type: "string",
+            description: "Path to the skill directory",
+          },
+          descriptionOverride: {
+            type: "string",
+            description: "Starting description override",
+          },
+          maxIterations: {
+            type: "number",
+            description: "Max optimization iterations (default: 5)",
+          },
+          numWorkers: {
+            type: "number",
+            description: "Parallel workers (default: 10)",
+          },
+          timeout: {
+            type: "number",
+            description: "Timeout per query in seconds (default: 30)",
+          },
+          runsPerQuery: {
+            type: "number",
+            description: "Runs per query (default: 3)",
+          },
+          triggerThreshold: {
+            type: "number",
+            description: "Trigger rate threshold (default: 0.5)",
+          },
+          triggerOnly: {
+            type: "boolean",
+            description:
+              "Stop each eval run as soon as the synthetic skill is triggered and ignore later workflow failures (default: true)",
+          },
+          holdout: {
+            type: "number",
+            description: "Test set holdout fraction (default: 0.4)",
+          },
+          model: {
+            type: "string",
+            description: "Model ID in provider/model format",
+          },
+          agent: {
+            type: "string",
+            description: "OpenCode agent for trigger eval runs (default: build)",
+          },
+          liveReportPath: {
+            type: "string",
+            description: "Path to write live HTML report",
+          },
+          logDir: {
+            type: "string",
+            description: "Directory for improvement transcripts",
+          },
         },
+        required: ["evalSetPath", "skillPath"],
         async execute(args) {
           const { readFileSync } = await import("fs")
           const evalSet: EvalItem[] = JSON.parse(
@@ -660,7 +743,7 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
           )
           const meta = parseSkillMd(args.skillPath)
           const projectRoot = findProjectRoot()
-          await assertNoInstalledSkillConflict(meta.name, projectRoot)
+          await assertNoInstalledSkillConflict(meta.name, listAvailableSkills)
 
           const result = await runLoop({
             evalSet,
@@ -682,35 +765,38 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
 
           return JSON.stringify(result, null, 2)
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_aggregate_benchmark — aggregate grading.json results
       // ---------------------------------------------------------------
-      skill_aggregate_benchmark: tool({
+      add({
+        name: "skill_aggregate_benchmark",
         description:
           "Aggregate grading.json files from benchmark run directories into summary statistics. Produces benchmark.json with pass rates, timing, and token usage per configuration.",
-        args: {
-          benchmarkDir: tool.schema
-            .string()
-            .describe("Path to the benchmark directory (containing eval-N/ subdirectories)"),
-          skillName: tool.schema
-            .string()
-            .optional()
-            .describe("Skill name for the report header"),
-          skillPath: tool.schema
-            .string()
-            .optional()
-            .describe("Path to the skill directory"),
-          outputPath: tool.schema
-            .string()
-            .optional()
-            .describe("Path to write benchmark.json (default: <benchmarkDir>/benchmark.json)"),
-          markdownPath: tool.schema
-            .string()
-            .optional()
-            .describe("Path to write benchmark.md (default: <benchmarkDir>/benchmark.md)"),
+        properties: {
+          benchmarkDir: {
+            type: "string",
+            description: "Path to the benchmark directory (containing eval-N/ subdirectories)",
+          },
+          skillName: {
+            type: "string",
+            description: "Skill name for the report header",
+          },
+          skillPath: {
+            type: "string",
+            description: "Path to the skill directory",
+          },
+          outputPath: {
+            type: "string",
+            description: "Path to write benchmark.json (default: <benchmarkDir>/benchmark.json)",
+          },
+          markdownPath: {
+            type: "string",
+            description: "Path to write benchmark.md (default: <benchmarkDir>/benchmark.md)",
+          },
         },
+        required: ["benchmarkDir"],
         async execute(args) {
           const { writeFileSync } = await import("fs")
           const benchmark = generateBenchmark(
@@ -735,30 +821,34 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
             2,
           )
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_generate_report — generate HTML optimization report
       // ---------------------------------------------------------------
-      skill_generate_report: tool({
+      add({
+        name: "skill_generate_report",
         description:
           "Generate a self-contained HTML report showing description optimization results per iteration with pass/fail indicators for each eval query.",
-        args: {
-          dataPath: tool.schema
-            .string()
-            .describe("Path to the optimization results JSON (output of skill_optimize_loop)"),
-          outputPath: tool.schema
-            .string()
-            .describe("Path to write the HTML report"),
-          skillName: tool.schema
-            .string()
-            .optional()
-            .describe("Skill name for the report title"),
-          autoRefresh: tool.schema
-            .boolean()
-            .optional()
-            .describe("Add auto-refresh meta tag (default: false)"),
+        properties: {
+          dataPath: {
+            type: "string",
+            description: "Path to the optimization results JSON (output of skill_optimize_loop)",
+          },
+          outputPath: {
+            type: "string",
+            description: "Path to write the HTML report",
+          },
+          skillName: {
+            type: "string",
+            description: "Skill name for the report title",
+          },
+          autoRefresh: {
+            type: "boolean",
+            description: "Add auto-refresh meta tag (default: false)",
+          },
         },
+        required: ["dataPath", "outputPath"],
         async execute(args) {
           const { readFileSync, writeFileSync } = await import("fs")
           const data = JSON.parse(readFileSync(args.dataPath, "utf-8"))
@@ -769,39 +859,44 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
           writeFileSync(args.outputPath, html)
           return JSON.stringify({ reportPath: args.outputPath })
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_serve_review — start the eval review viewer
       // ---------------------------------------------------------------
-      skill_serve_review: tool({
+      add({
+        name: "skill_serve_review",
         description:
           "Start an HTTP server that serves the eval review viewer. Regenerates HTML on each page load so refreshing picks up new outputs. Opens the browser automatically.",
-        args: {
-          workspace: tool.schema
-            .string()
-            .describe("Path to the workspace directory containing eval results"),
-          port: tool.schema
-            .number()
-            .optional()
-            .describe("Server port (default: 3117)"),
-          skillName: tool.schema
-            .string()
-            .optional()
-            .describe("Skill name for the viewer header"),
-          previousWorkspace: tool.schema
-            .string()
-            .optional()
-            .describe("Path to previous iteration's workspace (for showing old outputs and feedback)"),
-          benchmarkPath: tool.schema
-            .string()
-            .optional()
-            .describe("Path to benchmark.json for the Benchmark tab"),
-          allowPartial: tool.schema
-            .boolean()
-            .optional()
-            .describe("Allow launching review even if with_skill/baseline run pairs are incomplete (default: false)"),
+        properties: {
+          workspace: {
+            type: "string",
+            description: "Path to the workspace directory containing eval results",
+          },
+          port: {
+            type: "number",
+            description: "Server port (default: 3117)",
+          },
+          skillName: {
+            type: "string",
+            description: "Skill name for the viewer header",
+          },
+          previousWorkspace: {
+            type: "string",
+            description:
+              "Path to previous iteration's workspace (for showing old outputs and feedback)",
+          },
+          benchmarkPath: {
+            type: "string",
+            description: "Path to benchmark.json for the Benchmark tab",
+          },
+          allowPartial: {
+            type: "boolean",
+            description:
+              "Allow launching review even if with_skill/baseline run pairs are incomplete (default: false)",
+          },
         },
+        required: ["workspace"],
         async execute(args) {
           const prep = prepareReviewLaunch(args)
 
@@ -840,18 +935,19 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
             message: `Eval viewer running at ${url}. Press Ctrl+C or call skill_stop_review to stop.`,
           })
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_stop_review — stop a running review server
       // ---------------------------------------------------------------
-      skill_stop_review: tool({
+      add({
+        name: "skill_stop_review",
         description: "Stop a running eval review viewer server.",
-        args: {
-          workspace: tool.schema
-            .string()
-            .optional()
-            .describe("Workspace path of the server to stop (stops all if omitted)"),
+        properties: {
+          workspace: {
+            type: "string",
+            description: "Workspace path of the server to stop (stops all if omitted)",
+          },
         },
         async execute(args) {
           if (args.workspace) {
@@ -873,38 +969,43 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
           activeServers.clear()
           return JSON.stringify({ stopped })
         },
-      }),
+      })
 
       // ---------------------------------------------------------------
       // skill_export_static_review — generate standalone HTML file
       // ---------------------------------------------------------------
-      skill_export_static_review: tool({
+      add({
+        name: "skill_export_static_review",
         description:
           "Generate a standalone HTML eval review file (no server needed). Use in headless environments or for sharing.",
-        args: {
-          workspace: tool.schema
-            .string()
-            .describe("Path to the workspace directory"),
-          outputPath: tool.schema
-            .string()
-            .describe("Path to write the HTML file"),
-          skillName: tool.schema
-            .string()
-            .optional()
-            .describe("Skill name for the viewer header"),
-          previousWorkspace: tool.schema
-            .string()
-            .optional()
-            .describe("Path to previous iteration's workspace"),
-          benchmarkPath: tool.schema
-            .string()
-            .optional()
-            .describe("Path to benchmark.json"),
-          allowPartial: tool.schema
-            .boolean()
-            .optional()
-            .describe("Allow exporting review even if with_skill/baseline run pairs are incomplete (default: false)"),
+        properties: {
+          workspace: {
+            type: "string",
+            description: "Path to the workspace directory",
+          },
+          outputPath: {
+            type: "string",
+            description: "Path to write the HTML file",
+          },
+          skillName: {
+            type: "string",
+            description: "Skill name for the viewer header",
+          },
+          previousWorkspace: {
+            type: "string",
+            description: "Path to previous iteration's workspace",
+          },
+          benchmarkPath: {
+            type: "string",
+            description: "Path to benchmark.json",
+          },
+          allowPartial: {
+            type: "boolean",
+            description:
+              "Allow exporting review even if with_skill/baseline run pairs are incomplete (default: false)",
+          },
         },
+        required: ["workspace", "outputPath"],
         async execute(args) {
           const prep = prepareReviewLaunch(args)
 
@@ -932,9 +1033,9 @@ export const SkillCreatorPlugin: Plugin = async (ctx) => {
             message: `Static viewer written to ${outPath}`,
           })
         },
-      }),
-    },
-  }
-}
+      })
+    })
+  },
+})
 
 export default SkillCreatorPlugin
