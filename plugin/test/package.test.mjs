@@ -233,6 +233,77 @@ test("compiled review server runs in Node without a Bun runtime global", async (
   }
 })
 
+test("embedded review data survives `$` replacement patterns and `</script>`", async () => {
+  const tempHome = mkdtempSync(join(tmpdir(), "osc-review-escape-"))
+  const workspace = join(tempHome, "workspace")
+  const fakeBin = join(tempHome, "bin")
+  const previousXdgConfigHome = process.env.XDG_CONFIG_HOME
+  const previousPath = process.env.PATH
+
+  // Content that used to corrupt the injected script: `` $` `` spliced the
+  // whole template prefix into the data (producing a document of duplicates),
+  // `$&` / `$'` spliced the match / remainder, and a raw `</script>` closed the
+  // element early. U+2028 / U+2029 are illegal raw in pre-ES2019 JS strings.
+  const tricky = "$' $& $` $$ $1 </script> <!-- </SCRIPT> \u2028 \u2029 done"
+
+  try {
+    const outputsDir = join(workspace, "eval-0", "with_skill", "outputs")
+    mkdirSync(outputsDir, { recursive: true })
+    mkdirSync(fakeBin, { recursive: true })
+    writeFileSync(
+      join(workspace, "eval-0", "eval_metadata.json"),
+      `${JSON.stringify({ eval_id: 0, prompt: "Review this output" })}\n`,
+    )
+    writeFileSync(join(outputsDir, "result.txt"), tricky)
+    writeFileSync(join(fakeBin, "open"), "#!/bin/sh\nexit 0\n")
+    chmodSync(join(fakeBin, "open"), 0o755)
+
+    process.env.XDG_CONFIG_HOME = tempHome
+    process.env.PATH = previousPath ? `${fakeBin}:${previousPath}` : fakeBin
+
+    const { tools } = await loadPluginTools(`${distEntryUrl}?review-escape=${Date.now()}`)
+    const result = await executeToolJson(tools, "skill_serve_review", {
+      workspace,
+      port: 0,
+      skillName: "test-skill",
+      allowPartial: true,
+    })
+
+    try {
+      const html = await (await fetch(result.url)).text()
+
+      // The `$`-pattern bug duplicated the template; a correct page has one.
+      assert.equal((html.match(/<!DOCTYPE html>/gi) || []).length, 1)
+      // Escaping must keep every <script> element balanced.
+      assert.equal(
+        (html.match(/<script\b/gi) || []).length,
+        (html.match(/<\/script>/gi) || []).length,
+      )
+
+      const match = html.match(/const EMBEDDED_DATA = (\{[\s\S]*?\});\r?\n/)
+      assert.ok(match, "embedded data script should be present and terminated")
+      const embedded = JSON.parse(match[1])
+      // The original string round-trips exactly, proving it was escaped rather
+      // than mangled or truncated.
+      assert.equal(embedded.runs[0].outputs[0].content, tricky)
+    } finally {
+      await tools.get("skill_stop_review").execute({ workspace }, {})
+    }
+  } finally {
+    if (previousXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME
+    } else {
+      process.env.XDG_CONFIG_HOME = previousXdgConfigHome
+    }
+    if (previousPath === undefined) {
+      delete process.env.PATH
+    } else {
+      process.env.PATH = previousPath
+    }
+    rmSync(tempHome, { recursive: true, force: true })
+  }
+})
+
 test("compiled review server stop closes active browser connections", async () => {
   const tempHome = mkdtempSync(join(tmpdir(), "osc-review-stop-"))
   const workspace = join(tempHome, "workspace")

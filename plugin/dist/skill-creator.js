@@ -1913,6 +1913,9 @@ function loadPreviousIteration(workspace) {
   }
   return result;
 }
+function serializeForInlineScript(value) {
+  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+}
 function generateReviewHtml(opts) {
   const { runs, skillName, previous, benchmark, templatePath } = opts;
   const template = readFileSync4(templatePath, "utf-8");
@@ -1934,8 +1937,8 @@ function generateReviewHtml(opts) {
   };
   if (benchmark)
     embedded.benchmark = benchmark;
-  const dataJson = JSON.stringify(embedded);
-  return template.replace("/*__EMBEDDED_DATA__*/", `const EMBEDDED_DATA = ${dataJson};`);
+  const dataJson = serializeForInlineScript(embedded);
+  return template.replace("/*__EMBEDDED_DATA__*/", () => `const EMBEDDED_DATA = ${dataJson};`);
 }
 
 class PayloadTooLargeError extends Error {

@@ -352,6 +352,24 @@ function loadPreviousIteration(
 // HTML generation
 // ---------------------------------------------------------------------------
 
+/**
+ * Serialize a value so it can be inlined verbatim inside an HTML `<script>`
+ * element without breaking out of the script block:
+ *
+ *  - Every `<` becomes `\u003c`. That is valid in both JSON and JavaScript
+ *    string literals, and it neutralizes `</script>` / `<!--` sequences that
+ *    could otherwise close the element early when they appear inside string
+ *    values (e.g. a report that discusses `</script>` or HTML).
+ *  - U+2028 / U+2029 are legal in JSON but were illegal as raw characters
+ *    inside JavaScript string literals before ES2019, so escape them too.
+ */
+export function serializeForInlineScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029")
+}
+
 export function generateReviewHtml(opts: {
   runs: Run[]
   skillName: string
@@ -381,8 +399,15 @@ export function generateReviewHtml(opts: {
   }
   if (benchmark) embedded.benchmark = benchmark
 
-  const dataJson = JSON.stringify(embedded)
-  return template.replace("/*__EMBEDDED_DATA__*/", `const EMBEDDED_DATA = ${dataJson};`)
+  // Serialize once and inject via a replacer *function*. A string replacement
+  // would treat `$&`, `$'`, `` $` `` and `$1` in the data as substitution
+  // patterns, silently corrupting the output (e.g. the schema regex
+  // `^SO[0-9]+$` contains `` $` `` and would splice in the whole template).
+  const dataJson = serializeForInlineScript(embedded)
+  return template.replace(
+    "/*__EMBEDDED_DATA__*/",
+    () => `const EMBEDDED_DATA = ${dataJson};`,
+  )
 }
 
 // ---------------------------------------------------------------------------
